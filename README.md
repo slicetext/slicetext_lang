@@ -6,7 +6,7 @@ This version is written in C++, with only the standard library.
 ### Dependencies
 There are no dependencies other than cmake and gcc.
 ### From Commandline
-Just run `cmake .` in the project directory and then run `make Lang`. Run with `./Lang`!
+Just run `cmake .` in the project directory and then run `make Lang`. Run with `./Lang.x86_64`!
 
 ## Features
 Right now, the language lexes symbols, strings, operators, and numeric literals but only supports basic calculator-esque
