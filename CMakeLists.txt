@@ -12,3 +12,5 @@ add_executable(
     ${PROJECT_NAME}
     ${SOURCES}
 )
+
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "Lang.x86_64")
