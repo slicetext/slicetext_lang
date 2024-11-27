@@ -74,12 +74,18 @@ class Compiler {
         std::unordered_map<std::string, Operator> mOps;
     public:
         Compiler() {
-            mOps["^"] = {5, 2};
+            mOps["**"]= {5, 2};
             mOps["*"] = {5, 2};
             mOps["/"] = {5, 2};
             mOps["%"] = {5, 2};
             mOps["+"] = {4, 2};
             mOps["-"] = {4, 2};
+            mOps["<<"]= {3, 2};
+            mOps[">>"]= {3, 2};
+            mOps["&"] = {2, 2};
+            mOps["|"] = {2, 2};
+            mOps["^"] = {2, 2};
+            mOps["~"] = {2, 1};
         }
         std::vector<Token> Lex(std::string code) {
             std::vector<Token> tokens;
@@ -112,7 +118,7 @@ class Compiler {
             uint16_t len=code.length();
             while(cur<len) {
                 char sCur=code[cur];
-                std::string operators  =  "*/+-%^=";
+                std::string operators  =  "*/+-%^=&|^<>~";
                 std::string whitespace =  "\t\r\v\f ";
                 std::string symbols    =  "abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
                 std::string hexLit     =  "0123456789abcdefABCDEF";
@@ -209,7 +215,7 @@ class Compiler {
                             next_state=State::BIN_NUM_LITERAL;
                         } else {
                             next_state=State::ENDTOKEN;
-                            tok_curr = {Token::Type::NUM_LITERAL, curr_token};
+                            tok_curr = {Token::Type::NUM_LITERAL, curr_token,};
                             tok_curr.value = double(std::stoll(f_num_tok, nullptr, 2));
                         }
                     } break;
@@ -384,11 +390,13 @@ class Compiler {
                     case(Token::Type::OPERATOR):
                     {
                         std::vector<double> mem(t.op.arguments);
+                        std::vector<int> memBin(t.op.arguments);
                         for(u_int8_t a=0; a<t.op.arguments; a++) {
                             if(stkSolve.empty()) {
                                 throw CompileError("Solver: Bad RPN!");
                             } else {
                                 mem[a]=stkSolve[0];
+                                memBin[a]=(int)stkSolve[0];
                                 stkSolve.pop_front();
                             }
                         }
@@ -399,10 +407,17 @@ class Compiler {
                             if(t.symbol=="*") result=mem[1]*mem[0];
                             if(t.symbol=="+") result=mem[1]+mem[0];
                             if(t.symbol=="-") result=mem[1]-mem[0];
-                            if(t.symbol=="^") result=std::pow(mem[1],mem[0]);
+                            if(t.symbol=="**") result=std::pow(mem[1],mem[0]);
+                            //Bitwise
+                            if(t.symbol=="&") result=memBin[1]&memBin[0];
+                            if(t.symbol=="|") result=memBin[1]|memBin[0];
+                            if(t.symbol=="^") result=memBin[1]^memBin[0];
+                            if(t.symbol==">>") result=memBin[1]>>memBin[0];
+                            if(t.symbol=="<<") result=memBin[1]<<memBin[0];
                         } else if(t.op.arguments==1) {
                             if(t.symbol=="+") result=+mem[0];
                             if(t.symbol=="-") result=-mem[0];
+                            if(t.symbol=="~") result=~memBin[0];
                         }
                         stkSolve.push_front(result);
                     } break;

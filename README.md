@@ -17,9 +17,15 @@ Operator | Function
 \* | Multiplication
 / | Division
 \+ | Addition
-\- | Subtraction
-^ | Exponents
+\- | Subtraction / Unary Negation
+\*\* | Exponents
 % | Modulo
+& | Bitwise And
+\| | Bitwise Or
+^ | Bitwise Xor
+~ | Bitwise Not
+\>\> | Right Shift
+<< | Left Shift
 
 The language also supports several numeric notations.
 
