@@ -10,7 +10,7 @@ Just run `cmake .` in the project directory and then run `make Lang`. Run with `
 
 ## Features
 Right now, the language lexes symbols, strings, operators, and numeric literals but only supports basic calculator-esque
-features such as performing arithmatic with PEMDAS.
+features such as performing arithmatic with PEMDAS, as well as variable assignment.
 
 Operator | Function
 |:-:|---|
@@ -26,6 +26,9 @@ Operator | Function
 ~ | Bitwise Not
 \>\> | Right Shift
 << | Left Shift
+++ | Increment
+-- | Decrement
+= | Assignment
 
 The language also supports several numeric notations.
 

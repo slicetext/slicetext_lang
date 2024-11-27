@@ -13,6 +13,10 @@ struct Operator{
     uint8_t precedence;
     uint8_t arguments;
 };
+struct Value{
+    double value=0;
+    std::string name="";
+};
 struct Token{
     enum class Type {
         UNKNOWN,
@@ -86,6 +90,10 @@ class Compiler {
             mOps["|"] = {2, 2};
             mOps["^"] = {2, 2};
             mOps["~"] = {2, 1};
+            //Asignment
+            mOps["="] = {1, 2};
+            mOps["++"]= {1, 1};
+            mOps["--"]= {1, 1};
         }
         std::vector<Token> Lex(std::string code) {
             std::vector<Token> tokens;
@@ -332,6 +340,11 @@ class Compiler {
                         stkOutput.push_back(c);
                         previous=stkOutput.back();
                     } break;
+                    case(Token::Type::SYMBOL):
+                    {
+                        stkOutput.push_back(c);
+                        previous=stkOutput.back();
+                    } break;
                     case(Token::Type::PAREN_OPEN):
                     {
                         stkHolding.push_front(c);
@@ -379,51 +392,64 @@ class Compiler {
             }
             return stkOutput;
         }
-        double Solve(std::deque<Token> tokens) {
-            std::deque<double> stkSolve;
+        struct SolveResult{
+            double r;
+            std::unordered_map<std::string, Value> t;
+        };
+        SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars) {
+            std::deque<Value> stkSolve;
+            std::unordered_map<std::string, Value> varMem=vars;
             for(const auto& t : tokens) {
                 switch(t.type) {
                     case(Token::Type::NUM_LITERAL):
                     {
-                        stkSolve.push_front(t.value);
+                        stkSolve.push_front({t.value});
+                    } break;
+                    case(Token::Type::SYMBOL):
+                    {
+                        stkSolve.push_front({varMem[t.symbol].value,t.symbol});
                     } break;
                     case(Token::Type::OPERATOR):
                     {
-                        std::vector<double> mem(t.op.arguments);
+                        std::vector<Value> mem(t.op.arguments);
                         std::vector<int> memBin(t.op.arguments);
                         for(u_int8_t a=0; a<t.op.arguments; a++) {
                             if(stkSolve.empty()) {
                                 throw CompileError("Solver: Bad RPN!");
                             } else {
                                 mem[a]=stkSolve[0];
-                                memBin[a]=(int)stkSolve[0];
+                                memBin[a]=(int)stkSolve[0].value;
                                 stkSolve.pop_front();
                             }
                         }
-                        double result=0.0;
+                        Value result={0.0};
                         if(t.op.arguments==2) {
-                            if(t.symbol=="/") result=mem[1]/mem[0];
-                            if(t.symbol=="%") result=std::fmod(mem[1],mem[0]);
-                            if(t.symbol=="*") result=mem[1]*mem[0];
-                            if(t.symbol=="+") result=mem[1]+mem[0];
-                            if(t.symbol=="-") result=mem[1]-mem[0];
-                            if(t.symbol=="**") result=std::pow(mem[1],mem[0]);
+                            if(t.symbol=="/") result.value=mem[1].value/mem[0].value;
+                            if(t.symbol=="%") result.value=std::fmod(mem[1].value,mem[0].value);
+                            if(t.symbol=="*") result.value=mem[1].value*mem[0].value;
+                            if(t.symbol=="+") result.value=mem[1].value+mem[0].value;
+                            if(t.symbol=="-") result.value=mem[1].value-mem[0].value;
+                            if(t.symbol=="**") result.value=std::pow(mem[1].value,mem[0].value);
                             //Bitwise
-                            if(t.symbol=="&") result=memBin[1]&memBin[0];
-                            if(t.symbol=="|") result=memBin[1]|memBin[0];
-                            if(t.symbol=="^") result=memBin[1]^memBin[0];
-                            if(t.symbol==">>") result=memBin[1]>>memBin[0];
-                            if(t.symbol=="<<") result=memBin[1]<<memBin[0];
+                            if(t.symbol=="&") result.value=memBin[1]&memBin[0];
+                            if(t.symbol=="|") result.value=memBin[1]|memBin[0];
+                            if(t.symbol=="^") result.value=memBin[1]^memBin[0];
+                            if(t.symbol==">>") result.value=memBin[1]>>memBin[0];
+                            if(t.symbol=="<<") result.value=memBin[1]<<memBin[0];
+                            //Asignment
+                            if(t.symbol=="=") varMem[mem[1].name].value=mem[0].value;
                         } else if(t.op.arguments==1) {
-                            if(t.symbol=="+") result=+mem[0];
-                            if(t.symbol=="-") result=-mem[0];
-                            if(t.symbol=="~") result=~memBin[0];
+                            if(t.symbol=="+") result.value=+mem[0].value;
+                            if(t.symbol=="-") result.value=-mem[0].value;
+                            if(t.symbol=="~") result.value=~memBin[0];
+                            if(t.symbol=="++") varMem[mem[0].name].value++;
+                            if(t.symbol=="--") varMem[mem[0].name].value--;
                         }
-                        stkSolve.push_front(result);
+                        stkSolve.push_front({result});
                     } break;
                 }
             }
-            return stkSolve[0];
+            return {stkSolve[0].value, varMem};
         }
 };
 
@@ -434,6 +460,7 @@ const std::string SUCCESS_COLOR  = "\033[0;32m";
 
 int main()
 {
+    std::unordered_map<std::string, Value> vars;
     while(true) {
         std::string code;
         std::cout<<">> "<<RESET_COLOR;
@@ -455,8 +482,9 @@ int main()
                 }
             }
             std::cout<<std::endl;
-            double result = compiler.Solve(rpn);
-            std::cout<<result<<std::endl;
+            Compiler::SolveResult result = compiler.Solve(rpn, vars);
+            vars=result.t;
+            std::cout<<result.r<<std::endl;
             std::cout<<SUCCESS_COLOR;
         } catch (CompileError& e) {
             std::cout<<ERROR_COLOR<<e.what()<<FAILURE_COLOR<<std::endl;
