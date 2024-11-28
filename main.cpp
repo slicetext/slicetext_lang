@@ -1,4 +1,3 @@
-#include <array>
 #include <cctype>
 #include <cstdint>
 #include <exception>
@@ -6,6 +5,7 @@
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <deque>
 #include <cmath>
@@ -17,6 +17,9 @@ struct Value{
     double value=0;
     std::string name="";
 };
+struct Keyword {
+    bool statement;
+};
 struct Token{
     enum class Type {
         UNKNOWN,
@@ -24,6 +27,7 @@ struct Token{
         STRING_LITERAL,
         OPERATOR,
         SYMBOL,
+        KEYWORD,
         PAREN_OPEN,
         PAREN_CLOSE,
         SEPERATOR,
@@ -33,6 +37,7 @@ struct Token{
     std::string symbol;
     double value=0.0;
     Operator op;
+    Keyword key;
 
     void prettyStr() const {
         switch (type) {
@@ -50,6 +55,9 @@ struct Token{
                 break;
             case Token::Type::SYMBOL:
                 std::cout<<"[Symbol "<<symbol<<"]"<<std::endl;
+                break;
+            case Token::Type::KEYWORD:
+                std::cout<<"[Keyword "<<symbol<<"]"<<std::endl;
                 break;
             case Token::Type::PAREN_OPEN:
                 std::cout<<"[Open Paren]"<<std::endl;
@@ -76,6 +84,7 @@ class CompileError : public std::exception {
 class Compiler {
     protected:
         std::unordered_map<std::string, Operator> mOps;
+        std::unordered_map<std::string, Keyword> mKeys;
     public:
         Compiler() {
             mOps["**"]= {5, 2};
@@ -94,6 +103,8 @@ class Compiler {
             mOps["="] = {1, 2};
             mOps["++"]= {1, 1};
             mOps["--"]= {1, 1};
+
+            mKeys["var"]= {true};
         }
         std::vector<Token> Lex(std::string code) {
             std::vector<Token> tokens;
@@ -307,8 +318,14 @@ class Compiler {
                             curr_token+=sCur;
                             ++cur;
                         } else {
-                            tok_curr = {Token::Type::SYMBOL, curr_token};
-                            next_state=State::ENDTOKEN;
+                            if(mKeys.count(curr_token)>0) {
+                                tok_curr = {Token::Type::KEYWORD, curr_token};
+                                tok_curr.key=mKeys[curr_token];
+                                next_state=State::ENDTOKEN;
+                            } else {
+                                tok_curr = {Token::Type::SYMBOL, curr_token};
+                                next_state=State::ENDTOKEN;
+                            }
                         }
                     } break;
                     case (State::ENDTOKEN):
@@ -341,6 +358,11 @@ class Compiler {
                         previous=stkOutput.back();
                     } break;
                     case(Token::Type::SYMBOL):
+                    {
+                        stkOutput.push_back(c);
+                        previous=stkOutput.back();
+                    } break;
+                    case(Token::Type::KEYWORD):
                     {
                         stkOutput.push_back(c);
                         previous=stkOutput.back();
@@ -399,7 +421,14 @@ class Compiler {
         SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars) {
             std::deque<Value> stkSolve;
             std::unordered_map<std::string, Value> varMem=vars;
+            enum class State {
+                NONE,
+                VAR,
+            };
+            State cur_state=State::NONE;
+            State next_state=State::NONE;
             for(const auto& t : tokens) {
+                cur_state=next_state;
                 switch(t.type) {
                     case(Token::Type::NUM_LITERAL):
                     {
@@ -407,7 +436,19 @@ class Compiler {
                     } break;
                     case(Token::Type::SYMBOL):
                     {
-                        stkSolve.push_front({varMem[t.symbol].value,t.symbol});
+                        if(varMem.count(t.symbol)>0 || cur_state==State::VAR) {
+                            stkSolve.push_front({varMem[t.symbol].value,t.symbol});
+                            next_state=State::NONE;
+                        } else {
+                            throw CompileError("Solver: "+t.symbol+" is Undeclared");
+                        }
+                    } break;
+                    case(Token::Type::KEYWORD):
+                    {
+                        if(t.key.statement==true) {
+                            if(t.symbol=="var") next_state=State::VAR;
+                            continue;
+                        }
                     } break;
                     case(Token::Type::OPERATOR):
                     {
