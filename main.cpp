@@ -5,17 +5,14 @@
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <deque>
 #include <cmath>
+#include "functions.h"
+#include "standard_lib.cpp"
 struct Operator{
     uint8_t precedence;
     uint8_t arguments;
-};
-struct Value{
-    double value=0;
-    std::string name="";
 };
 struct Keyword {
     bool statement;
@@ -104,7 +101,7 @@ class Compiler {
             mOps["++"]= {1, 1};
             mOps["--"]= {1, 1};
 
-            mKeys["var"]= {true};
+            mKeys["var"] = {true};
         }
         std::vector<Token> Lex(std::string code) {
             std::vector<Token> tokens;
@@ -350,6 +347,8 @@ class Compiler {
             std::deque<Token> stkOutput;
             Token previous = {Token::Type::NUM_LITERAL, "0", 0};
             uint count=0;
+            int paren_balence=0;
+            bool flag_args=false;
             for(const Token c : code) {
                 switch(c.type) {
                     case(Token::Type::NUM_LITERAL):
@@ -362,6 +361,16 @@ class Compiler {
                         stkOutput.push_back(c);
                         previous=stkOutput.back();
                     } break;
+                    case(Token::Type::STRING_LITERAL):
+                    {
+                        stkOutput.push_back(c);
+                        previous=stkOutput.back();
+                    } break;
+                    case(Token::Type::SEPERATOR):
+                    {
+                        stkOutput.push_back(c);
+                        previous=stkOutput.back();
+                    } break;
                     case(Token::Type::KEYWORD):
                     {
                         stkOutput.push_back(c);
@@ -369,17 +378,35 @@ class Compiler {
                     } break;
                     case(Token::Type::PAREN_OPEN):
                     {
-                        stkHolding.push_front(c);
-                        previous=stkHolding.front();
+                        ++paren_balence;
+                        if(previous.type!=Token::Type::SYMBOL) {
+                            stkHolding.push_front(c);
+                            previous=stkHolding.front();
+                        } else {
+                            stkOutput.push_back(c);
+                            previous=stkOutput.back();
+                            flag_args=true;
+                        }
                     } break;
                     case(Token::Type::PAREN_CLOSE):
                     {
-                        while(!stkHolding.empty() && stkHolding.front().type!=Token::Type::PAREN_OPEN) {
-                            stkOutput.push_back(stkHolding.front());
-                            stkHolding.pop_front();
-                        }
-                        if(!stkHolding.empty() && stkHolding.front().type==Token::Type::PAREN_OPEN) {
-                            stkHolding.pop_front();
+                        --paren_balence;
+                        if(paren_balence==0 && flag_args) {
+                            Operator paren_op;
+                            paren_op.arguments=0;
+                            paren_op.precedence=0;
+                            Token paren_tok={ Token::Type::OPERATOR, ")", 0, paren_op };
+                            stkHolding.push_front(paren_tok);
+                            previous=stkHolding.front();
+                            flag_args=false;
+                        } else {
+                            while(!stkHolding.empty() && stkHolding.front().type!=Token::Type::PAREN_OPEN) {
+                                stkOutput.push_back(stkHolding.front());
+                                stkHolding.pop_front();
+                            }
+                            if(!stkHolding.empty() && stkHolding.front().type==Token::Type::PAREN_OPEN) {
+                                stkHolding.pop_front();
+                            }
                         }
                     } break;
                     case(Token::Type::OPERATOR):
@@ -417,16 +444,22 @@ class Compiler {
         struct SolveResult{
             double r;
             std::unordered_map<std::string, Value> t;
+            std::unordered_map<std::string, Func> f;
         };
-        SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars) {
+        SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars,std::unordered_map<std::string,Func> funcs) {
             std::deque<Value> stkSolve;
             std::unordered_map<std::string, Value> varMem=vars;
+            std::unordered_map<std::string, Func> funcMem=funcs;
             enum class State {
                 NONE,
                 VAR,
+                FUNC,
             };
             State cur_state=State::NONE;
             State next_state=State::NONE;
+            bool flag_in_args=false;
+            std::string func_name;
+            std::vector<Value> args;
             for(const auto& t : tokens) {
                 cur_state=next_state;
                 switch(t.type) {
@@ -434,14 +467,38 @@ class Compiler {
                     {
                         stkSolve.push_front({t.value});
                     } break;
+                    case(Token::Type::STRING_LITERAL):
+                    {
+                        stkSolve.push_front({t.value,t.symbol});
+                    } break;
                     case(Token::Type::SYMBOL):
                     {
                         if(varMem.count(t.symbol)>0 || cur_state==State::VAR) {
                             stkSolve.push_front({varMem[t.symbol].value,t.symbol});
                             next_state=State::NONE;
+                        } else if(funcMem.count(t.symbol)>0) {
+                            next_state=State::FUNC;
+                            func_name=t.symbol;
+                            args.clear();
+                            flag_in_args=false;
                         } else {
                             throw CompileError("Solver: "+t.symbol+" is Undeclared");
                         }
+                    } break;
+                    case(Token::Type::SEPERATOR):
+                    {
+                        if(flag_in_args && stkSolve.size()>0) {
+                            args.push_back(stkSolve.front());
+                        }
+                    } break;
+                    case(Token::Type::PAREN_OPEN):
+                    {
+                        if(cur_state==State::FUNC) {
+                            flag_in_args=true;
+                        }
+                    } break;
+                    case(Token::Type::PAREN_CLOSE):
+                    {
                     } break;
                     case(Token::Type::KEYWORD):
                     {
@@ -452,6 +509,14 @@ class Compiler {
                     } break;
                     case(Token::Type::OPERATOR):
                     {
+                        if(t.symbol==")" && cur_state==State::FUNC && flag_in_args) {
+                            flag_in_args=false;
+                            if(funcMem.count(func_name)>0 && args.size()==funcMem[func_name].amt_args) {
+                                funcMem[func_name].callback(args);
+                            } else {
+                                throw CompileError("Solver: Invalid Function Call");
+                            }
+                        }
                         std::vector<Value> mem(t.op.arguments);
                         std::vector<int> memBin(t.op.arguments);
                         for(u_int8_t a=0; a<t.op.arguments; a++) {
@@ -490,7 +555,7 @@ class Compiler {
                     } break;
                 }
             }
-            return {stkSolve[0].value, varMem};
+            return {stkSolve[0].value, varMem, funcMem};
         }
 };
 
@@ -502,6 +567,13 @@ const std::string SUCCESS_COLOR  = "\033[0;32m";
 int main()
 {
     std::unordered_map<std::string, Value> vars;
+    std::unordered_map<std::string, Func> funcs;
+    libMain();
+    Functions* func=Functions::get_instance();
+    auto func_list=func->get_functions();
+    for(const auto& i : *func_list) {
+        funcs[i.name]=i;
+    }
     while(true) {
         std::string code;
         std::cout<<">> "<<RESET_COLOR;
@@ -523,9 +595,9 @@ int main()
                 }
             }
             std::cout<<std::endl;
-            Compiler::SolveResult result = compiler.Solve(rpn, vars);
+            Compiler::SolveResult result = compiler.Solve(rpn, vars, funcs);
             vars=result.t;
-            std::cout<<result.r<<std::endl;
+            //std::cout<<result.r<<std::endl;
             std::cout<<SUCCESS_COLOR;
         } catch (CompileError& e) {
             std::cout<<ERROR_COLOR<<e.what()<<FAILURE_COLOR<<std::endl;
