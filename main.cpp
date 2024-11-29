@@ -457,7 +457,7 @@ class Compiler {
             };
             State cur_state=State::NONE;
             State next_state=State::NONE;
-            bool flag_in_args=false;
+            int flag_in_args=0;
             std::string func_name;
             std::vector<Value> args;
             for(const auto& t : tokens) {
@@ -475,26 +475,28 @@ class Compiler {
                     {
                         if(varMem.count(t.symbol)>0 || cur_state==State::VAR) {
                             stkSolve.push_front({varMem[t.symbol].value,t.symbol});
-                            next_state=State::NONE;
+                            if(cur_state==State::VAR) {
+                                next_state=State::NONE;
+                            }
                         } else if(funcMem.count(t.symbol)>0) {
                             next_state=State::FUNC;
                             func_name=t.symbol;
                             args.clear();
-                            flag_in_args=false;
+                            flag_in_args=0;
                         } else {
                             throw CompileError("Solver: "+t.symbol+" is Undeclared");
                         }
                     } break;
                     case(Token::Type::SEPERATOR):
                     {
-                        if(flag_in_args && stkSolve.size()>0) {
+                        if(flag_in_args>0 && stkSolve.size()>0) {
                             args.push_back(stkSolve.front());
                         }
                     } break;
                     case(Token::Type::PAREN_OPEN):
                     {
                         if(cur_state==State::FUNC) {
-                            flag_in_args=true;
+                            flag_in_args++;
                         }
                     } break;
                     case(Token::Type::PAREN_CLOSE):
@@ -509,10 +511,10 @@ class Compiler {
                     } break;
                     case(Token::Type::OPERATOR):
                     {
-                        if(t.symbol==")" && cur_state==State::FUNC && flag_in_args) {
-                            flag_in_args=false;
+                        if(t.symbol==")" && cur_state==State::FUNC && flag_in_args>0) {
+                            flag_in_args--;
                             if(funcMem.count(func_name)>0 && args.size()==funcMem[func_name].amt_args) {
-                                funcMem[func_name].callback(args);
+                                stkSolve.push_front(funcMem[func_name].callback(args));
                             } else {
                                 throw CompileError("Solver: Invalid Function Call");
                             }
@@ -533,7 +535,7 @@ class Compiler {
                             if(t.symbol=="/") result.value=mem[1].value/mem[0].value;
                             if(t.symbol=="%") result.value=std::fmod(mem[1].value,mem[0].value);
                             if(t.symbol=="*") result.value=mem[1].value*mem[0].value;
-                            if(t.symbol=="+") result.value=mem[1].value+mem[0].value;
+                            if(t.symbol=="+") result.value=mem[1].value+mem[0].value; result.name=mem[1].name+mem[0].name;
                             if(t.symbol=="-") result.value=mem[1].value-mem[0].value;
                             if(t.symbol=="**") result.value=std::pow(mem[1].value,mem[0].value);
                             //Bitwise

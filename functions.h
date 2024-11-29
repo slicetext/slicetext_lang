@@ -5,10 +5,11 @@
 struct Value{
     double value=0;
     std::string name="";
+    bool null=false;
 };
 struct Func{
     std::string name;
-    const int(*callback)(std::vector<Value> args);
+    const Value(*callback)(std::vector<Value> args);
     int amt_args;
 };
 class Functions{
