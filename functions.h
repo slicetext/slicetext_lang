@@ -6,6 +6,7 @@ struct Value{
     double value=0;
     std::string name="";
     bool null=false;
+    std::string str_value="";
 };
 struct Func{
     std::string name;

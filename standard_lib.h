@@ -4,8 +4,8 @@
 
 
 const Value Print(std::vector<Value> args) {
-    if(args[0].value==0 && args[0].name!="") {
-        std::cout<<args[0].name;
+    if(args[0].value==0 && args[0].str_value!="") {
+        std::cout<<args[0].str_value;
     } else if(args[0].value!=0) {
         std::cout<<args[0].value;
     } else {
@@ -20,7 +20,7 @@ const Value Println(std::vector<Value> args) {
 }
 
 const Value Str(std::vector<Value> args) {
-    return { args[0].value, std::to_string(args[0].value) };
+    return { 0, "", false, std::to_string(args[0].value) };
 }
 
 int libMain() {

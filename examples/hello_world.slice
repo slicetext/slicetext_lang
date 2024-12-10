@@ -1,0 +1,2 @@
+var hi="Hello, World!"
+println(hi,)

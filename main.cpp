@@ -1,6 +1,7 @@
 #include <cctype>
 #include <cstdint>
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <sys/types.h>
@@ -9,7 +10,8 @@
 #include <deque>
 #include <cmath>
 #include "functions.h"
-#include "standard_lib.cpp"
+#include "standard_lib.h"
+#include <sstream>
 struct Operator{
     uint8_t precedence;
     uint8_t arguments;
@@ -35,6 +37,7 @@ struct Token{
     double value=0.0;
     Operator op;
     Keyword key;
+    std::string str_value="";
 
     void prettyStr() const {
         switch (type) {
@@ -140,6 +143,10 @@ class Compiler {
                 std::string hexLit     =  "0123456789abcdefABCDEF";
                 std::string binLit     =  "01";
                 bool ispar=sCur==')';
+                if(sCur=='\n') {
+                    next_state=State::ENDTOKEN;
+                    ++cur;
+                }
                 switch (curr_state) {
                     case (State::NEWTOKEN):
                     {
@@ -259,6 +266,7 @@ class Compiler {
                         } else {
                             ++cur;
                             tok_curr = {Token::Type::STRING_LITERAL, curr_token};
+                            tok_curr.str_value=curr_token;
                             next_state=State::ENDTOKEN;
                         }
                     } break;
@@ -469,12 +477,12 @@ class Compiler {
                     } break;
                     case(Token::Type::STRING_LITERAL):
                     {
-                        stkSolve.push_front({t.value,t.symbol});
+                        stkSolve.push_front({t.value,"",false, t.str_value});
                     } break;
                     case(Token::Type::SYMBOL):
                     {
                         if(varMem.count(t.symbol)>0 || cur_state==State::VAR) {
-                            stkSolve.push_front({varMem[t.symbol].value,t.symbol});
+                            stkSolve.push_front({varMem[t.symbol].value,t.symbol,false,varMem[t.symbol].str_value});
                             if(cur_state==State::VAR) {
                                 next_state=State::NONE;
                             }
@@ -545,7 +553,7 @@ class Compiler {
                             if(t.symbol==">>") result.value=memBin[1]>>memBin[0];
                             if(t.symbol=="<<") result.value=memBin[1]<<memBin[0];
                             //Asignment
-                            if(t.symbol=="=") varMem[mem[1].name].value=mem[0].value;
+                            if(t.symbol=="=") varMem[mem[1].name].value=mem[0].value;varMem[mem[1].name].str_value=mem[0].str_value;
                         } else if(t.op.arguments==1) {
                             if(t.symbol=="+") result.value=+mem[0].value;
                             if(t.symbol=="-") result.value=-mem[0].value;
@@ -566,8 +574,9 @@ const std::string ERROR_COLOR    = "\033[1;31m";
 const std::string FAILURE_COLOR  = "\033[0;31m";
 const std::string SUCCESS_COLOR  = "\033[0;32m";
 
-int main()
+int main(int argc, char *argv[])
 {
+    //If there is an argument
     std::unordered_map<std::string, Value> vars;
     std::unordered_map<std::string, Func> funcs;
     libMain();
@@ -575,6 +584,29 @@ int main()
     auto func_list=func->get_functions();
     for(const auto& i : *func_list) {
         funcs[i.name]=i;
+    }
+    if(argc>1) {
+        std::ifstream f(argv[1]);
+        if(!f.is_open()) {
+            throw CompileError("Command: Invalid File input");
+            return 1;
+        }
+        std::string code;
+        std::ostringstream sstr;
+        sstr << f.rdbuf();
+        code=sstr.str();
+
+        std::stringstream strstream(code);
+        std::string t;
+        char splitter='\n';
+        while(getline(strstream, t, splitter)) {
+            Compiler compiler;
+            auto tokens=compiler.Lex( t + " " );
+            auto rpn=compiler.Parse(tokens);
+            Compiler::SolveResult result=compiler.Solve(rpn, vars, funcs);
+            vars=result.t;
+        }
+
     }
     while(true) {
         std::string code;
