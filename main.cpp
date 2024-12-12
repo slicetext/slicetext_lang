@@ -1,5 +1,6 @@
 #include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -29,6 +30,8 @@ struct Token{
         KEYWORD,
         PAREN_OPEN,
         PAREN_CLOSE,
+        CURLY_OPEN,
+        CURLY_CLOSE,
         SEPERATOR,
     };
 
@@ -64,6 +67,12 @@ struct Token{
                 break;
             case Token::Type::PAREN_CLOSE:
                 std::cout<<"[Close Paren]"<<std::endl;
+                break;
+            case Token::Type::CURLY_OPEN:
+                std::cout<<"[Open Curly]"<<std::endl;
+                break;
+            case Token::Type::CURLY_CLOSE:
+                std::cout<<"[Close Curly]"<<std::endl;
                 break;
             case Token::Type::SEPERATOR:
                 std::cout<<"[Seperator]"<<std::endl;
@@ -105,6 +114,8 @@ class Compiler {
             mOps["--"]= {1, 1};
 
             mKeys["var"] = {true};
+            mKeys["true"]= {false};
+            mKeys["true"]= {true};
         }
         std::vector<Token> Lex(std::string code) {
             std::vector<Token> tokens;
@@ -124,6 +135,8 @@ class Compiler {
                 ENDTOKEN,
                 OPEN_PAREN,
                 CLOSE_PAREN,
+                OPEN_CURLY,
+                CLOSE_CURLY,
                 SEPERATOR,
             };
             State curr_state=State::NEWTOKEN;
@@ -133,6 +146,7 @@ class Compiler {
             std::string f_num_tok="";
             Token tok_curr;
             int16_t paren_balence=0;
+            int16_t curly_balence=0;
             bool num_lit_point_used=false;
             uint16_t len=code.length();
             while(cur<len) {
@@ -184,6 +198,12 @@ class Compiler {
                         else if(sCur==')') {
                             next_state=State::CLOSE_PAREN;
                         }
+                        else if(sCur=='{') {
+                            next_state=State::OPEN_CURLY;
+                        }
+                        else if(sCur=='}') {
+                            next_state=State::CLOSE_CURLY;
+                        }
                         //Seperator
                         else if(sCur==',') {
                             next_state=State::SEPERATOR;
@@ -196,6 +216,17 @@ class Compiler {
                         //Symbol
                         else if(symbols.find(sCur)!=symbols.npos) {
                             next_state=State::SYMBOL;
+                        }
+                        //Unknown
+                        else {
+                            char* txt=(char*)"Lexer: Invalid Symbol ";
+                            char* appender=&sCur;
+                            //std::flush(std::cout);
+                            char result[24];
+                            strcpy(result,txt);
+                            strcat(result,appender);
+                            result[23]='\0';
+                            throw CompileError(result);
                         }
                     } break;
                     case (State::F_NUM_LITERAL):
@@ -311,6 +342,21 @@ class Compiler {
                             next_state=State::ENDTOKEN;
                         }
                     } break;
+                    case (State::OPEN_CURLY):
+                    {
+                        curr_token+=sCur;
+                        ++cur;
+                        curly_balence++;
+                        tok_curr = {Token::Type::CURLY_OPEN, curr_token};
+                        next_state=State::ENDTOKEN;
+                    } break;
+                    case (State::CLOSE_CURLY): {
+                        curr_token+=sCur;
+                        ++cur;
+                        curly_balence--;
+                        tok_curr = {Token::Type::CURLY_CLOSE, curr_token};
+                        next_state=State::ENDTOKEN;
+                    } break;
                     case (State::SEPERATOR):
                     {
                         curr_token+=sCur;
@@ -345,6 +391,9 @@ class Compiler {
             if(paren_balence!=0) {
                 throw CompileError("Lexer: Unbalenced Parenthesis!");
             }
+            if(curly_balence!=0) {
+                //throw CompileError("Lexer: Unbalenced Curly Braces!");
+            }
             if(curr_state==State::STRING_LITERAL) {
                 throw CompileError("Lexer: String not Closed");
             }
@@ -375,6 +424,16 @@ class Compiler {
                         previous=stkOutput.back();
                     } break;
                     case(Token::Type::SEPERATOR):
+                    {
+                        stkOutput.push_back(c);
+                        previous=stkOutput.back();
+                    } break;
+                    case(Token::Type::CURLY_OPEN):
+                    {
+                        stkOutput.push_back(c);
+                        previous=stkOutput.back();
+                    } break;
+                    case(Token::Type::CURLY_CLOSE):
                     {
                         stkOutput.push_back(c);
                         previous=stkOutput.back();
@@ -510,11 +569,19 @@ class Compiler {
                     case(Token::Type::PAREN_CLOSE):
                     {
                     } break;
+                    case(Token::Type::CURLY_OPEN):
+                    {
+                    } break;
+                    case(Token::Type::CURLY_CLOSE):
+                    {
+                    } break;
                     case(Token::Type::KEYWORD):
                     {
                         if(t.key.statement==true) {
                             if(t.symbol=="var") next_state=State::VAR;
                             continue;
+                        } else {
+                            if(t.symbol=="true"); //booleans
                         }
                     } break;
                     case(Token::Type::OPERATOR):
@@ -599,12 +666,16 @@ int main(int argc, char *argv[])
         std::stringstream strstream(code);
         std::string t;
         char splitter='\n';
-        while(getline(strstream, t, splitter)) {
-            Compiler compiler;
-            auto tokens=compiler.Lex( t + " " );
-            auto rpn=compiler.Parse(tokens);
-            Compiler::SolveResult result=compiler.Solve(rpn, vars, funcs);
-            vars=result.t;
+        try {
+            while(getline(strstream, t, splitter)) {
+                Compiler compiler;
+                auto tokens=compiler.Lex( t + " " );
+                auto rpn=compiler.Parse(tokens);
+                Compiler::SolveResult result=compiler.Solve(rpn, vars, funcs);
+                vars=result.t;
+            }
+        } catch (CompileError& e) {
+            std::cout<<ERROR_COLOR<<e.what()<<FAILURE_COLOR<<std::endl;
         }
 
     }

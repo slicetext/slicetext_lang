@@ -7,6 +7,7 @@ struct Value{
     std::string name="";
     bool null=false;
     std::string str_value="";
+    bool bool_value=false;
 };
 struct Func{
     std::string name;
