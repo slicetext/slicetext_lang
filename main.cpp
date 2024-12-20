@@ -13,6 +13,7 @@
 #include "functions.h"
 #include "standard_lib.h"
 #include <sstream>
+#include <bitset>
 struct Operator{
     uint8_t precedence;
     uint8_t arguments;
@@ -114,8 +115,9 @@ class Compiler {
             mOps["--"]= {1, 1};
 
             mKeys["var"] = {true};
+            mKeys["func"]= {true};
             mKeys["true"]= {false};
-            mKeys["true"]= {true};
+            mKeys["false"]= {false};
         }
         std::vector<Token> Lex(std::string code) {
             std::vector<Token> tokens;
@@ -512,11 +514,15 @@ class Compiler {
             double r;
             std::unordered_map<std::string, Value> t;
             std::unordered_map<std::string, Func> f;
+            uint16_t scope;
+            uint8_t flags;
         };
-        SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars,std::unordered_map<std::string,Func> funcs) {
+        SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars,std::unordered_map<std::string,Func> funcs, uint16_t scope, uint8_t aFlags) {
             std::deque<Value> stkSolve;
             std::unordered_map<std::string, Value> varMem=vars;
             std::unordered_map<std::string, Func> funcMem=funcs;
+            uint16_t iScope=scope;
+            uint8_t flags=aFlags;
             enum class State {
                 NONE,
                 VAR,
@@ -527,112 +533,138 @@ class Compiler {
             int flag_in_args=0;
             std::string func_name;
             std::vector<Value> args;
+            const uint8_t MASK_FUNC = 0b00000001;
+            const uint8_t MASK_SKIP = 0b00000010;
+            const uint8_t MASK_BUF  = 0b00000100;
             for(const auto& t : tokens) {
                 cur_state=next_state;
-                switch(t.type) {
-                    case(Token::Type::NUM_LITERAL):
-                    {
-                        stkSolve.push_front({t.value});
-                    } break;
-                    case(Token::Type::STRING_LITERAL):
-                    {
-                        stkSolve.push_front({t.value,"",false, t.str_value});
-                    } break;
-                    case(Token::Type::SYMBOL):
-                    {
-                        if(varMem.count(t.symbol)>0 || cur_state==State::VAR) {
-                            stkSolve.push_front({varMem[t.symbol].value,t.symbol,false,varMem[t.symbol].str_value});
-                            if(cur_state==State::VAR) {
-                                next_state=State::NONE;
-                            }
-                        } else if(funcMem.count(t.symbol)>0) {
-                            next_state=State::FUNC;
-                            func_name=t.symbol;
-                            args.clear();
-                            flag_in_args=0;
-                        } else {
-                            throw CompileError("Solver: "+t.symbol+" is Undeclared");
-                        }
-                    } break;
-                    case(Token::Type::SEPERATOR):
-                    {
-                        if(flag_in_args>0 && stkSolve.size()>0) {
-                            args.push_back(stkSolve.front());
-                        }
-                    } break;
-                    case(Token::Type::PAREN_OPEN):
-                    {
-                        if(cur_state==State::FUNC) {
-                            flag_in_args++;
-                        }
-                    } break;
-                    case(Token::Type::PAREN_CLOSE):
-                    {
-                    } break;
-                    case(Token::Type::CURLY_OPEN):
-                    {
-                    } break;
-                    case(Token::Type::CURLY_CLOSE):
-                    {
-                    } break;
-                    case(Token::Type::KEYWORD):
-                    {
-                        if(t.key.statement==true) {
-                            if(t.symbol=="var") next_state=State::VAR;
-                            continue;
-                        } else {
-                            if(t.symbol=="true"); //booleans
-                        }
-                    } break;
-                    case(Token::Type::OPERATOR):
-                    {
-                        if(t.symbol==")" && cur_state==State::FUNC && flag_in_args>0) {
-                            flag_in_args--;
-                            if(funcMem.count(func_name)>0 && args.size()==funcMem[func_name].amt_args) {
-                                stkSolve.push_front(funcMem[func_name].callback(args));
-                            } else {
-                                throw CompileError("Solver: Invalid Function Call");
-                            }
-                        }
-                        std::vector<Value> mem(t.op.arguments);
-                        std::vector<int> memBin(t.op.arguments);
-                        for(u_int8_t a=0; a<t.op.arguments; a++) {
-                            if(stkSolve.empty()) {
-                                throw CompileError("Solver: Bad RPN!");
-                            } else {
-                                mem[a]=stkSolve[0];
-                                memBin[a]=(int)stkSolve[0].value;
-                                stkSolve.pop_front();
-                            }
-                        }
-                        Value result={0.0};
-                        if(t.op.arguments==2) {
-                            if(t.symbol=="/") result.value=mem[1].value/mem[0].value;
-                            if(t.symbol=="%") result.value=std::fmod(mem[1].value,mem[0].value);
-                            if(t.symbol=="*") result.value=mem[1].value*mem[0].value;
-                            if(t.symbol=="+") result.value=mem[1].value+mem[0].value; result.name=mem[1].name+mem[0].name;
-                            if(t.symbol=="-") result.value=mem[1].value-mem[0].value;
-                            if(t.symbol=="**") result.value=std::pow(mem[1].value,mem[0].value);
-                            //Bitwise
-                            if(t.symbol=="&") result.value=memBin[1]&memBin[0];
-                            if(t.symbol=="|") result.value=memBin[1]|memBin[0];
-                            if(t.symbol=="^") result.value=memBin[1]^memBin[0];
-                            if(t.symbol==">>") result.value=memBin[1]>>memBin[0];
-                            if(t.symbol=="<<") result.value=memBin[1]<<memBin[0];
-                            //Asignment
-                            if(t.symbol=="=") varMem[mem[1].name].value=mem[0].value;varMem[mem[1].name].str_value=mem[0].str_value;
-                        } else if(t.op.arguments==1) {
-                            if(t.symbol=="+") result.value=+mem[0].value;
-                            if(t.symbol=="-") result.value=-mem[0].value;
-                            if(t.symbol=="~") result.value=~memBin[0];
-                            if(t.symbol=="++") varMem[mem[0].name].value++;
-                            if(t.symbol=="--") varMem[mem[0].name].value--;
-                        }
-                        stkSolve.push_front({result});
-                    } break;
+                if((flags&MASK_SKIP)!=MASK_SKIP) {
+                    switch(t.type) {
+                        case(Token::Type::NUM_LITERAL):
+                            {
+                                stkSolve.push_front({t.value});
+                            } break;
+                        case(Token::Type::STRING_LITERAL):
+                            {
+                                stkSolve.push_front({t.value,"",false, t.str_value});
+                            } break;
+                        case(Token::Type::SYMBOL):
+                            {
+                                if(varMem.count(t.symbol)>0 || cur_state==State::VAR) {
+                                    stkSolve.push_front({varMem[t.symbol].value,t.symbol,false,varMem[t.symbol].str_value});
+                                    if(cur_state==State::VAR) {
+                                        next_state=State::NONE;
+                                    }
+                                } else if(funcMem.count(t.symbol)>0 || (flags & MASK_FUNC)) {
+                                    next_state=State::FUNC;
+                                    func_name=t.symbol;
+                                    args.clear();
+                                    flag_in_args=0;
+                                } else {
+                                    throw CompileError("Solver: "+t.symbol+" is Undeclared");
+                                }
+                            } break;
+                        case(Token::Type::SEPERATOR):
+                            {
+                                if(flag_in_args>0 && stkSolve.size()>0) {
+                                    args.push_back(stkSolve.front());
+                                }
+                            } break;
+                        case(Token::Type::PAREN_OPEN):
+                            {
+                                if(cur_state==State::FUNC) {
+                                    flag_in_args++;
+                                }
+                            } break;
+                        case(Token::Type::PAREN_CLOSE):
+                            {
+                            } break;
+                        case(Token::Type::CURLY_OPEN):
+                            {
+                                iScope++;
+                            } break;
+                        case(Token::Type::CURLY_CLOSE):
+                            {
+                                iScope--;
+                            } break;
+                        case(Token::Type::KEYWORD):
+                            {
+                                if(t.key.statement==true) {
+                                    if(t.symbol=="var") next_state=State::VAR;
+                                    if(t.symbol=="func") next_state=State::FUNC; flags |= MASK_FUNC;;
+                                    continue;
+                                } else {
+                                    if(t.symbol=="true")stkSolve.push_front( { 0,"",false,"",true} ); //booleans
+                                    if(t.symbol=="false")stkSolve.push_front( { 0,"",false,"",false} ); //booleans
+                                }
+                            } break;
+                        case(Token::Type::OPERATOR):
+                            {
+                                if(t.symbol==")" && cur_state==State::FUNC ) {
+                                    flag_in_args--;
+                                    if(!(flags&MASK_FUNC)) {
+                                        if(funcMem.count(func_name)>0 && args.size()==funcMem[func_name].amt_args) {
+                                            stkSolve.push_front(funcMem[func_name].callback(args));
+                                        } else {
+                                            throw CompileError("Solver: Invalid Function Call");
+                                        }
+                                    } else {
+                                        //function definition
+                                        flags|=MASK_BUF;
+                                        flags|=MASK_SKIP;
+
+                                    }
+                                }
+                                std::vector<Value> mem(t.op.arguments);
+                                std::vector<int> memBin(t.op.arguments);
+                                for(u_int8_t a=0; a<t.op.arguments; a++) {
+                                    if(stkSolve.empty()) {
+                                        throw CompileError("Solver: Bad RPN!");
+                                    } else {
+                                        mem[a]=stkSolve[0];
+                                        memBin[a]=(int)stkSolve[0].value;
+                                        stkSolve.pop_front();
+                                    }
+                                }
+                                Value result={0.0};
+                                if(t.op.arguments==2) {
+                                    if(t.symbol=="/") result.value=mem[1].value/mem[0].value;
+                                    if(t.symbol=="%") result.value=std::fmod(mem[1].value,mem[0].value);
+                                    if(t.symbol=="*") result.value=mem[1].value*mem[0].value;
+                                    if(t.symbol=="+") result.value=mem[1].value+mem[0].value; result.name=mem[1].name+mem[0].name;
+                                    if(t.symbol=="-") result.value=mem[1].value-mem[0].value;
+                                    if(t.symbol=="**") result.value=std::pow(mem[1].value,mem[0].value);
+                                    //Bitwise
+                                    if(t.symbol=="&") result.value=memBin[1]&memBin[0];
+                                    if(t.symbol=="|") result.value=memBin[1]|memBin[0];
+                                    if(t.symbol=="^") result.value=memBin[1]^memBin[0];
+                                    if(t.symbol==">>") result.value=memBin[1]>>memBin[0];
+                                    if(t.symbol=="<<") result.value=memBin[1]<<memBin[0];
+                                    //Asignment
+                                    if(t.symbol=="=") varMem[mem[1].name].value=mem[0].value;varMem[mem[1].name].str_value=mem[0].str_value;
+                                } else if(t.op.arguments==1) {
+                                    if(t.symbol=="+") result.value=+mem[0].value;
+                                    if(t.symbol=="-") result.value=-mem[0].value;
+                                    if(t.symbol=="~") result.value=~memBin[0];
+                                    if(t.symbol=="++") varMem[mem[0].name].value++;
+                                    if(t.symbol=="--") varMem[mem[0].name].value--;
+                                }
+                                stkSolve.push_front({result});
+                            } break;
+                    }
                 }
+                if(t.type==Token::Type::CURLY_CLOSE) {
+                    if((flags&MASK_FUNC)==MASK_FUNC) {
+                        std::cout<<"close"<<std::endl;
+                        flags&=~MASK_SKIP;
+                    }
+                    flags&=~MASK_BUF;
+                    flags&=~MASK_FUNC;
+                }
+                std::bitset<8> flagsb(flags);
+                std::cout<<"Flags: "<<flagsb<<std::endl;
             }
-            return {stkSolve[0].value, varMem, funcMem};
+            return {stkSolve[0].value, varMem, funcMem,iScope,flags};
         }
 };
 
@@ -646,6 +678,8 @@ int main(int argc, char *argv[])
     //If there is an argument
     std::unordered_map<std::string, Value> vars;
     std::unordered_map<std::string, Func> funcs;
+    uint16_t scope;
+    uint8_t flags=0;
     libMain();
     Functions* func=Functions::get_instance();
     auto func_list=func->get_functions();
@@ -667,13 +701,17 @@ int main(int argc, char *argv[])
         std::string t;
         char splitter='\n';
         try {
+            Compiler::SolveResult result;
             while(getline(strstream, t, splitter)) {
                 Compiler compiler;
                 auto tokens=compiler.Lex( t + " " );
                 auto rpn=compiler.Parse(tokens);
-                Compiler::SolveResult result=compiler.Solve(rpn, vars, funcs);
+                result=compiler.Solve(rpn, vars, funcs, scope, flags);
                 vars=result.t;
+                scope=result.scope;
+                flags=result.flags;
             }
+            if(scope!=0) throw CompileError("Solver: Mismatched Curly Braces!");
         } catch (CompileError& e) {
             std::cout<<ERROR_COLOR<<e.what()<<FAILURE_COLOR<<std::endl;
         }
@@ -700,7 +738,8 @@ int main(int argc, char *argv[])
                 }
             }
             std::cout<<std::endl;
-            Compiler::SolveResult result = compiler.Solve(rpn, vars, funcs);
+            Compiler::SolveResult result = compiler.Solve(rpn, vars, funcs, scope, flags);
+            if(result.scope!=0) throw CompileError("Solver: Mismatched Curly Braces!");
             vars=result.t;
             //std::cout<<result.r<<std::endl;
             std::cout<<SUCCESS_COLOR;
