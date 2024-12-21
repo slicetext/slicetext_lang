@@ -1,4 +1,4 @@
-func bar(a,){
-    println(a,)
+func bar(){
+    println("hello world",)
 }
-bar("hello world",)
+bar()

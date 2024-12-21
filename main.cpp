@@ -516,13 +516,19 @@ class Compiler {
             std::unordered_map<std::string, Func> f;
             uint16_t scope;
             uint8_t flags;
+            std::vector<Token> buffer;
+            std::unordered_map<std::string,std::deque<Token>> usrFuncs;
+            std::deque<std::string> funcname;
         };
-        SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars,std::unordered_map<std::string,Func> funcs, uint16_t scope, uint8_t aFlags) {
+        SolveResult Solve(std::deque<Token> tokens, std::unordered_map<std::string, Value>vars,std::unordered_map<std::string,Func> funcs, uint16_t scope, uint8_t aFlags, std::vector<Token> buf, std::unordered_map<std::string,std::deque<Token>> usrFuncs, std::deque<std::string> funcname) {
             std::deque<Value> stkSolve;
             std::unordered_map<std::string, Value> varMem=vars;
             std::unordered_map<std::string, Func> funcMem=funcs;
+            std::unordered_map<std::string,std::deque<Token>> uFuncs=usrFuncs;
             uint16_t iScope=scope;
             uint8_t flags=aFlags;
+            auto Nfuncname=funcname;
+            std::vector<Token> buffer=buf;
             enum class State {
                 NONE,
                 VAR,
@@ -560,6 +566,8 @@ class Compiler {
                                     func_name=t.symbol;
                                     args.clear();
                                     flag_in_args=0;
+                                } else if(usrFuncs.count(t.symbol)>0) {
+                                    stkSolve.push_front({Solve(usrFuncs[t.symbol],varMem,funcMem,iScope,flags,buffer,uFuncs,Nfuncname).r,t.symbol,false,varMem[t.symbol].str_value});
                                 } else {
                                     throw CompileError("Solver: "+t.symbol+" is Undeclared");
                                 }
@@ -612,6 +620,7 @@ class Compiler {
                                         //function definition
                                         flags|=MASK_BUF;
                                         flags|=MASK_SKIP;
+                                        Nfuncname.push_back(func_name);
 
                                     }
                                 }
@@ -652,11 +661,17 @@ class Compiler {
                                 stkSolve.push_front({result});
                             } break;
                     }
+                } else {
+                    buffer.push_back(t);
                 }
                 if(t.type==Token::Type::CURLY_CLOSE) {
+                    --iScope;
                     if((flags&MASK_FUNC)==MASK_FUNC) {
-                        std::cout<<"close"<<std::endl;
                         flags&=~MASK_SKIP;
+                        buffer.pop_back();
+                        for(int i=0; i<buffer.size(); i++) {
+                            uFuncs[Nfuncname.back()].push_back(buffer[i]);
+                        }
                     }
                     flags&=~MASK_BUF;
                     flags&=~MASK_FUNC;
@@ -664,7 +679,7 @@ class Compiler {
                 std::bitset<8> flagsb(flags);
                 std::cout<<"Flags: "<<flagsb<<std::endl;
             }
-            return {stkSolve[0].value, varMem, funcMem,iScope,flags};
+            return {stkSolve[0].value, varMem, funcMem,iScope,flags, buffer, uFuncs,Nfuncname};
         }
 };
 
@@ -706,7 +721,7 @@ int main(int argc, char *argv[])
                 Compiler compiler;
                 auto tokens=compiler.Lex( t + " " );
                 auto rpn=compiler.Parse(tokens);
-                result=compiler.Solve(rpn, vars, funcs, scope, flags);
+                result=compiler.Solve(rpn, vars, funcs, scope, flags, result.buffer, result.usrFuncs,result.funcname);
                 vars=result.t;
                 scope=result.scope;
                 flags=result.flags;
@@ -738,7 +753,7 @@ int main(int argc, char *argv[])
                 }
             }
             std::cout<<std::endl;
-            Compiler::SolveResult result = compiler.Solve(rpn, vars, funcs, scope, flags);
+            Compiler::SolveResult result = compiler.Solve(rpn, vars, funcs, scope, flags, {}, {}, {});
             if(result.scope!=0) throw CompileError("Solver: Mismatched Curly Braces!");
             vars=result.t;
             //std::cout<<result.r<<std::endl;
